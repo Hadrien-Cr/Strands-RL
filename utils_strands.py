@@ -3,7 +3,7 @@ import math
 import cv2
 import numpy as np
 
-gray_value = 100
+gray_value = 170
 WHITE = (255,255,255)
 BLACK = (0,0,0)
 GRAY = (gray_value,gray_value,gray_value)
