@@ -80,7 +80,7 @@ class BaseModel(nn.Module):
         logs_sps = []
         logs_loss =  []
         n_eval = 100
-        freq_eval,freq_render, freq_log = 1000,1000,50
+        freq_eval,freq_render, freq_log = 500,500,100
 
         env = Strands_GymEnv(self.board_size)
         start_eps, end_eps, exploration_fraction = 0.5, 0.01, 0.5
@@ -91,7 +91,7 @@ class BaseModel(nn.Module):
                 self.init_eligibility_traces()
 
             obs, info = env.reset()
-        
+            episode_cumulated_loss = 0
             st = time.time()
 
             for i in count():
@@ -100,9 +100,10 @@ class BaseModel(nn.Module):
                 action = agent.choose_best_action(env,eps = eps)
                 obs_next, reward, done, info = env.step(action)
                 p_next = self(obs_next)
-
+                
                 if done:
                     loss = self.update_weights(p, reward)
+                    episode_cumulated_loss+= abs(loss.item())
                     if reward != 0:
                         winner = ('white' if reward < 0 else 'black')
                         wins[winner] += 1
@@ -111,25 +112,32 @@ class BaseModel(nn.Module):
                     rewards.append(reward)
                     dt = time.time() - st
                     logs_sps.append(i/dt)
+                    logs_loss.append(episode_cumulated_loss)
                     break
                 else:
                     if episode>=env.max_rounds-i-1:
                         loss = self.update_weights(p, p_next)
-
-                obs = obs
+                        episode_cumulated_loss+= abs(loss.item())
+                obs = obs_next
 
             if episode % freq_log == 0:
-                avg_reward, black_win_rate, white_win_rate, draw_rate,sps = np.mean(rewards), wins['black']/episode, wins['white']/episode, wins['draw']/episode,np.mean(logs_sps)
-                print(f"Training:  {episode} games played, Avg reward = {avg_reward:.3f}, Black win rate = {black_win_rate:.3f}, White win rate = {white_win_rate:.3f}, Draw rate = {draw_rate:.3f}, SPS = {round(sps)}") 
+                avg_reward, std_reward, black_win_rate, white_win_rate, draw_rate,sps = np.mean(rewards[-freq_log:]), np.std(rewards[-freq_log:]), wins['black']/episode, wins['white']/episode, wins['draw']/episode,np.mean(logs_sps[-freq_log:])
+                loss = np.mean(logs_loss[-freq_log:])
+                print(f"Self-Play Training:  {episode} games played, Loss = {episode_cumulated_loss:.2f}, Avg reward = {avg_reward:.2f} +- {std_reward:.2f}, Black WR = {black_win_rate:.2f},  White WR = {white_win_rate:.2f},  Draw rate = {draw_rate:.2f},  SPS = {round(sps)},  EPS = {round(eps,2)}") 
 
             if episode % freq_eval == 0:
+
                 print('-'*110)
-                avg_reward, black_win_rate, white_win_rate, draw_rate,sps = evaluate_agent( env, [agents[0],agent_random], num_episodes=n_eval)
-                print(f"Evaluation vs Random: Avg reward = {avg_reward:.3f}, Black win rate = {black_win_rate:.3f}, White win rate = {white_win_rate:.3f}, Draw rate = {draw_rate:.3f} SPS = {round(sps)}") 
+                avg_reward, std_reward, black_win_rate, white_win_rate, draw_rate,sps = evaluate_agent( env, [agents[0],agent_random], num_episodes=n_eval)
+                print(f"Evaluation Black vs Random: Avg reward = {avg_reward:.2f} +- {std_reward:.2f}, Black WR = {black_win_rate:.2f}, White WR = {white_win_rate:.2f}, Draw rate = {draw_rate:.2f} SPS = {round(sps)}") 
                 print('-'*110)
+                avg_reward,  std_reward, black_win_rate, white_win_rate, draw_rate,sps = evaluate_agent( env, [agent_random,agents[1]], num_episodes=n_eval)
+                print(f"Evaluation Random vs White: Avg reward = {avg_reward:.2f} +- {std_reward:.2f}, Black WR = {black_win_rate:.2f}, White WR = {white_win_rate:.2f}, Draw rate = {draw_rate:.2f} SPS = {round(sps)}") 
+                print('-'*110)
+
 
             if episode % freq_render == 0:
                 rollout_and_render(env,agents = [agents[0],agent_random])
 
-model = BaseModel()
+model = BaseModel(size = 7)
 model.train_agent(n_episodes = 10_000, eligibility=True)
