@@ -5,6 +5,7 @@ from collections import Counter
 from collections import deque
 from utils_strands import *
 import time
+from copy import deepcopy
 
 class Strands_GymEnv(gymnasium.Env):
     """
@@ -216,10 +217,48 @@ class Strands_GymEnv(gymnasium.Env):
 
         self.obs = np.concatenate((self.bitmap_empty,self.bitmap_b,self.bitmap_w,self.current_mask),axis=0)
         
-        return self.obs,{'end of game':False}
+        return self.obs,{'last round':False}
     
-    def step(self, hex):
+    def compute_reward(self,  fill = None):
+        return self.calculate_connected_areas(owner=0, fill = fill)-self.calculate_connected_areas(owner=1, fill = fill)
+    
+    def compute_heuristic_reward(self):
+        scale = 0.01
+        return scale*( self.heuristic_calculate_connected_areas(owner=0)-self.heuristic_calculate_connected_areas(owner=1))    
+    
+    def list_available_actions(self):
+        return([idx for idx in range(self.board_size*self.board_size) if self.current_mask[idx]==1])
+    
+    def store_state(self):
+        self.stored_board = deepcopy(self.board)
+        self.stored_mask = deepcopy(self.current_mask)
+        self.stored_player = self.player_to_play
+        self.stored_prev_player = self.prev_player
+        self.stored_current_round = self.current_round
+        self.stored_env_buffer = deepcopy(self.env_buffer)
+        self.stored_remaining_hexes = deepcopy(self.remaining_hexes)
+        self.stored_bitmap_b = deepcopy(self.bitmap_b)
+        self.stored_bitmap_w = deepcopy(self.bitmap_w)
+        self.stored_bitmap_empty = deepcopy(self.bitmap_empty)
+        self.stored_current_mask = deepcopy(self.current_mask)
+    
+    def restore_state(self):
+        self.board = deepcopy(self.stored_board)
+        self.current_mask = deepcopy(self.stored_mask)
+        self.player_to_play = self.stored_player
+        self.prev_player = self.stored_prev_player
+        self.current_round = self.stored_current_round
+        self.env_buffer = deepcopy(self.stored_env_buffer)
+        self.remaining_hexes = deepcopy(self.stored_remaining_hexes)
+        self.bitmap_b = deepcopy(self.stored_bitmap_b)
+        self.bitmap_w = deepcopy(self.stored_bitmap_w)
+        self.bitmap_empty = deepcopy(self.stored_bitmap_empty)
+        self.current_mask = deepcopy(self.stored_current_mask)
+    
+    def step(self, hex,restore_after_call = False):
+
         assert self.is_legal(hex), "Illegal move"
+            
         ################ UPDATE THE STATE ###################
         label = self.mapping_hex_to_label[hex] 
         self.board[hex] = self.player_to_play # update the board
@@ -251,22 +290,20 @@ class Strands_GymEnv(gymnasium.Env):
         done =  (self.max_rounds-self.current_round<=1)
         self.obs = np.concatenate((self.bitmap_empty,self.bitmap_b,self.bitmap_w,self.current_mask),axis=0)
 
-
         if (self.current_round == self.max_rounds) and self.player_to_play != self.prev_player:  # the last action of the before last round
-            done = True
-            reward = self.calculate_connected_areas(owner=0, fill = self.player_to_play)-self.calculate_connected_areas(owner=1, fill = self.player_to_play)
-            return self.obs, reward, done, {'end of game':False}
+            obs,reward,done,info =  self.obs, self.compute_reward(fill = self.player_to_play), False, {'last round':True}
         
         elif (self.current_round == self.max_rounds+1) and np.sum(self.remaining_hexes)==0: # the last action of the game
-            done = True
-            reward = self.calculate_connected_areas(owner=0)-self.calculate_connected_areas(owner=1)
-            return self.obs, reward, done, {'end of game':True}
+            obs,reward,done,info =  self.obs.copy(), self.compute_reward(), True, {'last round':True}
         
         else:   
-            done = False
-            reward = 0
-            #reward = 0.01*(self.heuristic_calculate_connected_areas(owner=0)-self.heuristic_calculate_connected_areas(owner=1))
-            return self.obs, reward, done, {'end of game':False}
+            obs,reward,done,info = self.obs.copy(), 0,False, {'last round':False}
+
+        ################ RESTORE STATE ####################
+        if restore_after_call:
+            self.restore_state()
+            
+        return(obs,reward,done,info)
         
     def draw_board(self,scale = 50):
         if self.img is None:
@@ -308,8 +345,9 @@ if __name__ == '__main__':
     env = Strands_GymEnv(size)
     for _ in range(10):
         obs,info = env.reset()
+        done  = False
         env.render()
-        while not info['end of game']:
+        while not done:
             action = 0
             while not env.is_legal(action):
                 action = random.randint(0,size*size-1)

@@ -1,6 +1,6 @@
 In this repo, I experimented with Reinforcement learning on the game of Strands.
-I implemented a gym environment an trained a DQN agent to play the game.
-Strands is a simple strategy game where players take turns covering empty spaces on a hexagonal grid. It has similarities to Go.
+I implemented a gym environment an trained a TD agent to play the game.
+Strands is a simple strategy game where players take turns covering empty spaces on a hexagonal grid. It has similarities with Go.
 
 ## Rules
 One player has white stones, the other player has black. The game is played on a hexagonal grid, with hexagons marked with the numbers from 1 to 6
@@ -16,11 +16,10 @@ The game can be played with smaller (size 7, ie 7 squares of diameter) or bigger
 <img src="image.png" width=200>
 
 ## Resources
-- [Where to play](https://en.boardgamearena.com/gamepanel?game=strands)
+- [Where to play the game](https://en.boardgamearena.com/gamepanel?game=strands)
 - [Post about Advanced Strategy](https://boardgamegeek.com/thread/3114220/strands-strategy-primer)
 - [Deep Reinforcement Learning Course](https://huggingface.co/learn/deep-rl-course/unit0/introduction)
 
 ## Reference papers
-
-- TD-gammon (Gerald Tesauro,1995, https://www.csd.uwo.ca/~xling//cs346a/extra/tdgammon.pdf)
+- TD-gammon (Gerald Tesauro,1995, https://www.csd.uwo.ca/~xling//cs346a/extra/tdgammon.pdf) repo (https://github.com/dellalibera/td-gammon/blob/master/td_gammon/agents.py)
 - Playing Atari with Deep Reinforcement Learning (Deepmind, 2013, https://arxiv.org/abs/1312.5602)

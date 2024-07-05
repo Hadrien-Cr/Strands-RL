@@ -1,143 +1,135 @@
-import time
-from agent import Agent_DQN, Agent_Random
+from agent import Agent_TD, Agent_Random
+from eval import evaluate_agent, rollout_and_render
 from env import Strands_GymEnv
-from stable_baselines3.common.buffers import ReplayBuffer
 import torch
 import torch.nn as nn
+import random
+import time
 import numpy as np
-from train import train_agent
-from eval import evaluate_agent
+from itertools import count
 
-def linear_schedule(start_e: float, end_e: float, duration: int, step: int) -> float:
-    """
-    Linear schedule for exploration decay
-    """
-    slope = (start_e - end_e) / duration
-    return max(end_e, start_e - slope * step)
+class BaseModel(nn.Module):
+    def __init__(self, size = 11,hidden_units = 128, lr = 0.001, lamda = 0.5, seed=0):
+        super(BaseModel, self).__init__()
+        self.lr = lr
+        self.lamda = lamda  # trace-decay parameter
+        self.start_episode = 0
+        self.board_size = size
 
-def main(size=7):
-    """
-    Main function to train and evaluate two agents against each other.
+        self.eligibility_traces = None
+        self.optimizer = None
 
-    Args:
-        size (int, optional): The size of the game board. Defaults to 7.
-    """
-    # Initialize the agents
-    black_player = Agent_DQN(size)
-    white_player = Agent_Random(size)
-    agents = [black_player, white_player]
-    optimizers = [None, None]
-    for i in range(2):
-        if agents[i].trainable:
-            optimizers[i] = torch.optim.Adam(agents[i].parameters(), lr=3e-4, eps=1e-5)
+        torch.manual_seed(seed)
+        random.seed(seed)
+        input
+        self.hidden = nn.Sequential(
+            nn.Linear(4*self.board_size*self.board_size, hidden_units),
+            nn.Sigmoid())
 
-    # Initialize the environment
-    env = Strands_GymEnv(size=size)
+        self.output = nn.Sequential(
+            nn.Linear(hidden_units, 1),
+            nn.Sigmoid()).float()
 
-    # Initialize the training parameters
-    total_timesteps = 10_000
-    start_e, end_e, exploration_fraction = 1, 0.01, 0.5
-    log_frequency = 100
-    buffer_size = 5000
-    batch_size = 256
-    gamma = 1  # Discount factor for future rewards
-    learning_starts = 100
-    train_frequency = 10
-    render_frequency = 1000
+        for p in self.parameters():
+            nn.init.zeros_(p)
 
-    # Initialize the replay buffers
-    rb_black = ReplayBuffer(
-        buffer_size, env.single_observation_space, env.single_action_space, handle_timeout_termination=False
-    )
-    rb_white = ReplayBuffer(
-        buffer_size, env.single_observation_space, env.single_action_space, handle_timeout_termination=False
-    )
-    replay_buffers = [rb_black, rb_white]
+    def forward(self, obs):
+        x = torch.from_numpy(obs).to(torch.float32)
+        x = self.hidden(x)
+        x = self.output(x)
+        return x
 
-    # Initialize the logs
-    start_time = time.time()
-    seed = 0
-    logs = {"rewards": [], "ep_time": []}
+    def update_weights(self, p, p_next):
+        # reset the gradients
+        self.zero_grad()
 
-    # Reset the environment and start the game
-    obs, info = env.reset(seed=seed)
-    states_per_game = env.max_rounds
+        # compute the derivative of p w.r.t. the parameters
+        p.backward()
 
-    # Main training loop
-    for global_step in range(total_timesteps):
-        start_time = time.time()
-        eps = linear_schedule(start_e, end_e, duration=exploration_fraction * total_timesteps, step=global_step)
-        # Reset the environment for a new game
-        obs, info = env.reset(seed=seed)
-        ep_rewards = []
+        with torch.no_grad():
 
-        while not info["end of game"]:
-            # Determine the current player and their action
-            player = env.player_to_play
+            td_error = p_next - p
 
-            action, _ = agents[player].get_action(torch.tensor(obs).unsqueeze(0), eps)
+            # get the parameters of the model
+            parameters = list(self.parameters())
 
-            assert env.is_legal(action) == 1, "illegal action"
+            for i, weights in enumerate(parameters):
 
-            # Execute the action
-            next_obs, reward, done, info = env.step(action)
-            ep_rewards.append(reward)
-            # Log the experience in the respective replay buffer
+                # z <- gamma * lambda * z + (grad w w.r.t P_t)
+                self.eligibility_traces[i] = self.lamda * self.eligibility_traces[i] + weights.grad
 
-            replay_buffers[player].add(
-                obs=obs, next_obs=next_obs, action=action, reward=(1 if reward > 0 else -1) * reward, done=int(done), infos=info
-            )
+                # w <- w + alpha * td_error * z
+                new_weights = weights + self.lr * td_error * self.eligibility_traces[i]
+                weights.copy_(new_weights)
 
-            # Move to the next state
-            obs = next_obs
-            if global_step % render_frequency == 0 and global_step > learning_starts:
-                env.render()
+        return td_error
+
+    def init_eligibility_traces(self):
+        self.eligibility_traces = [torch.zeros(weights.shape, requires_grad=False) for weights in list(self.parameters())]
+
+    def train_agent(self, n_episodes = 10_000, eligibility=False):
         
-        if global_step % render_frequency == 0 and global_step > learning_starts:
-            env.close()
+        # INITIALIZATION OF THE AGENTS
+        network = self
+        agents = [ Agent_TD('black', board_size=self.board_size, net=network),  Agent_TD('white', board_size=self.board_size, net=network) ]
+        agent_random = Agent_Random('white', board_size=self.board_size, net=network)
 
+        # METRICS AND LOGS
+        wins = {'white': 0, 'black': 0, 'draw':0}
+        rewards = []
+        logs_sps = []
+        logs_loss =  []
+        n_eval = 100
+        freq_eval,freq_render, freq_log = 1000,1000,50
 
-        # After the game, update both agents
-        if global_step > learning_starts:
-            if global_step % train_frequency == 0:
-                for i in range(0, 2):
-                    if agents[i].trainable:
-                        train_agent(agents[i], optimizers[i], replay_buffers[i], batch_size, gamma)
+        env = Strands_GymEnv(self.board_size)
+        start_eps, end_eps, exploration_fraction = 0.5, 0.01, 0.5
+        
+        for episode in range(1,n_episodes+1):
+            eps = max(start_eps - episode * exploration_fraction/n_episodes  , end_eps) 
+            if eligibility:
+                self.init_eligibility_traces()
 
-        end_time = time.time()
-        logs["rewards"].append(sum(ep_rewards))
-        logs["ep_time"].append(end_time - start_time)
+            obs, info = env.reset()
+        
+            st = time.time()
 
-        if global_step % log_frequency == 0 and global_step > learning_starts:
+            for i in count():
+                agent = agents[env.player_to_play]
+                p = self(obs)
+                action = agent.choose_best_action(env,eps = eps)
+                obs_next, reward, done, info = env.step(action)
+                p_next = self(obs_next)
 
-            env.close()
-            # Evaluate the agent's performance (non-greedy)
-            avg_reward = np.mean(logs["rewards"][max(0, len(logs["rewards"]) - log_frequency)::])
-            black_win_rate = np.mean(
-                np.sign(logs["rewards"][max(0, len(logs["rewards"]) - log_frequency)::]) == 1
-            )
-            draw_rate = np.mean(np.sign(logs["rewards"][max(0, len(logs["rewards"]) - log_frequency)::]) == 0)
-            sps = states_per_game / np.mean(logs["ep_time"][max(0, len(logs["ep_time"]) - log_frequency)::])
-            white_win_rate = 1 - black_win_rate - draw_rate
-            
-            print("-" * 80)
-            print(f"Game {global_step}: Average Reward: {avg_reward:.2f}, Black WR: {black_win_rate:.2f}, White WR: {white_win_rate:.2f}, DR: {draw_rate:.2f}, SPS: {sps:.2f}, epsilon {eps:.2f}")
-            
+                if done:
+                    loss = self.update_weights(p, reward)
+                    if reward != 0:
+                        winner = ('white' if reward < 0 else 'black')
+                        wins[winner] += 1
+                    else:
+                        wins['draw'] += 1
+                    rewards.append(reward)
+                    dt = time.time() - st
+                    logs_sps.append(i/dt)
+                    break
+                else:
+                    if episode>=env.max_rounds-i-1:
+                        loss = self.update_weights(p, p_next)
 
-            # Evaluate the agent's performance (greedy)
-            avg_reward, black_win_rate, white_win_rate, draw_rate = evaluate_agent(env, agents[0], agents[1], num_episodes=100)
-            print("-" * 80)
-            print(f"Evaluation: Average Reward: {avg_reward:.2f}, Black WR: {black_win_rate:.2f}, White WR: {white_win_rate:.2f}, DR: {draw_rate:.2f}")
+                obs = obs
 
+            if episode % freq_log == 0:
+                avg_reward, black_win_rate, white_win_rate, draw_rate,sps = np.mean(rewards), wins['black']/episode, wins['white']/episode, wins['draw']/episode,np.mean(logs_sps)
+                print(f"Training:  {episode} games played, Avg reward = {avg_reward:.3f}, Black win rate = {black_win_rate:.3f}, White win rate = {white_win_rate:.3f}, Draw rate = {draw_rate:.3f}, SPS = {round(sps)}") 
 
-        # After the game, update both agents
-        if global_step > learning_starts:
-            if global_step % train_frequency == 0:
-                for i in range(0,2):
-                    if agents[i].trainable:
-                        train_agent(agents[i], optimizers[i], replay_buffers[i], batch_size, gamma)
+            if episode % freq_eval == 0:
+                print('-'*110)
+                avg_reward, black_win_rate, white_win_rate, draw_rate,sps = evaluate_agent( env, [agents[0],agent_random], num_episodes=n_eval)
+                print(f"Evaluation vs Random: Avg reward = {avg_reward:.3f}, Black win rate = {black_win_rate:.3f}, White win rate = {white_win_rate:.3f}, Draw rate = {draw_rate:.3f} SPS = {round(sps)}") 
+                print('-'*110)
 
-    env.close()
+            if episode % freq_render == 0:
+                rollout_and_render(env,agents = [agents[0],agent_random])
 
-if __name__ == "__main__":
-    main(size=7)
+model = BaseModel()
+model.train_agent(n_episodes = 10_000, eligibility=True)

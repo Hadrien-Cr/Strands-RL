@@ -1,37 +1,47 @@
 import torch
 import numpy as np
+from itertools import count
+import time
 
-def evaluate_agent(env, black_player, white_player, num_episodes=100):
-    total_rewards = []
-    win_count = {"black": 0, "white": 0, "draw": 0}
-    
+def evaluate_agent(env, agents, num_episodes=100):
+
+    wins = {"black": 0, "white": 0, "draw": 0}
+    rewards = []
+    logs_sps = []
     for episode in range(num_episodes):
+
         obs, info = env.reset(seed=episode)
         done = False
-        ep_rewards = []
-
-        while not info['end of game']:
+        st = time.time()
+        for i in count():
             player = env.player_to_play
-
-            if player == 0:
-                action, _ = black_player.get_action(torch.tensor(obs).unsqueeze(0), eps=0.)  # Minimal exploration
-            else:
-                action, _ = white_player.get_action(torch.tensor(obs).unsqueeze(0), eps=0.)  # Minimal exploration
-            
+            action = agents[player].choose_best_action(env, eps=0.)  # Minimal exploration
             obs, reward, done, info = env.step(action)
-            ep_rewards.append(reward)
-        ep_reward = sum(ep_rewards)
-        total_rewards.append(ep_reward)
-        if ep_reward > 0:
-            win_count["black"] += 1
-        elif ep_reward < 0:
-            win_count["white"] += 1
-        elif ep_reward == 0:
-            win_count["draw"] += 1
+            rewards.append(reward)
 
-    avg_reward = np.mean(total_rewards)
-    black_win_rate = win_count["black"] / num_episodes
-    white_win_rate = win_count["white"] / num_episodes
-    draw_rate = win_count["draw"] / num_episodes
+            if done:
+                if reward > 0:
+                    wins["black"] += 1
+                elif reward < 0:
+                    wins["white"] += 1
+                elif reward == 0:
+                    wins["draw"] += 1
+                dt = time.time() - st
+                logs_sps.append(i/dt)
+                break
+    avg_reward = np.mean(rewards)
+    black_win_rate = wins["black"] / num_episodes
+    white_win_rate = wins["white"] / num_episodes
+    draw_rate = wins["draw"] / num_episodes
+    sps = np.mean(logs_sps)
 
-    return avg_reward, black_win_rate, white_win_rate, draw_rate
+    return avg_reward, black_win_rate, white_win_rate, draw_rate,sps
+
+def rollout_and_render(env, agents):
+    obs, info = env.reset()  # Reset environment
+    done = False
+    while not done:
+        player = env.player_to_play
+        action = agents[player].choose_best_action(env, eps=0.)  # Minimal exploration
+        obs, reward, done, info = env.step(action)
+        env.render()
