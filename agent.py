@@ -1,46 +1,77 @@
-import torch
+import torch 
 import torch.nn as nn
-import numpy as np
-import random
-import time
+import torch.nn.functional as F
+from env import *
 
-
-
-class Agent_TD:
-    def __init__(self,color,board_size,net):
+class Agent(nn.Module):
+    def __init__(self,nbHexes: int,nbDigits: int, LABEL_COLOR: int):
         super().__init__()
-        self.color = color
-        self.board_size = board_size
-        self.net = net
-        
-    def choose_best_action(self, env,eps = 0):
-        actions = env.list_available_actions()
-        
-        if random.random()<eps:
-            return(random.choice(actions))
-        
-        else:
-            values = [0.0] * len(actions)
-            env.store_state()
-            for i, action in enumerate(actions):
-                obs, reward, done, info = env.step(action, restore_after_call = True)
-                values[i] = self.net(obs)
 
-        best_action_index = torch.argmax(torch.tensor(values)) if self.color == 'black' else torch.argmin(torch.tensor(values))
-        best_action = list(actions)[best_action_index]
+        self.LABEL = LABEL_COLOR 
 
-        return best_action
+        self.fc1 = nn.Linear(nbHexes,128)
+        self.fc2 = nn.Linear(128,128)
 
-
-class Agent_Random:
-    def __init__(self,color,board_size,net):
-        super().__init__()
-        self.color = color
-        self.board_size = board_size
-        
-    def choose_best_action(self, env,eps = 0):
-        actions = env.list_available_actions()
-        return(random.choice(actions))
+        self.outDigits = nn.Linear(128,nbDigits)
+        self.outHexes = nn.Linear(128,nbHexes)
         
 
+    def get_activations_digits(self, x: torch.Tensor) -> torch.Tensor:
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.outDigits(x)
+        return x
+    
+    def get_activations_hexes(self, x: torch.Tensor) -> torch.Tensor:
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.outHexes(x)
+        return x
+    
 
+def act(agent: Agent, board: StrandsBoard) -> torch.Tensor:
+    """
+    Acts and returns the surrogate Q value of the action performed
+    """
+    sum_Q, n_items = torch.tensor(0.), 0
+
+    # choosing a digit
+    if board.digits_left_to_place==0:
+        x = board.compute_network_inputs()
+        activations = agent.get_activations_digits(x)
+        mask = board.get_digits_availables()
+
+        mask_tensor = torch.tensor(mask,dtype=torch.float)
+        activations = activations - (1-mask_tensor) * 1e10
+
+        A = torch.argmax(activations).item()
+        Q = activations[A]
+        board.update_digit_chosen(A)
+
+        sum_Q = sum_Q + Q
+        n_items += 1
+
+    # placing tiles on hexes
+    while board.digits_left_to_place>0:
+        x = board.compute_network_inputs()
+        activations = agent.get_activations_hexes(x)
+        mask = board.get_hexes_availables()
+
+        mask_tensor = torch.tensor(mask,dtype=torch.float)
+        activations = activations - (1-mask_tensor) * 1e10
+
+        A = torch.argmax(activations).item()
+        Q = activations[A]
+
+        board.update_hex(A, agent.LABEL)
+
+        sum_Q = sum_Q + Q
+        n_items += 1
+
+    return (sum_Q/n_items)
+
+
+def init_agents(board: StrandsBoard) -> list[Agent]:
+    agents = [Agent(nbDigits=board.LABEL_BLACK+1, nbHexes=board.nbHexes, LABEL_COLOR=board.LABEL_WHITE),
+              Agent(nbDigits=board.LABEL_BLACK+1, nbHexes=board.nbHexes, LABEL_COLOR=board.LABEL_BLACK)]
+    return agents
