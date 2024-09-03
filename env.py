@@ -169,14 +169,15 @@ class StrandsBoard:
         return max_area
                 
     def compute_reward(self) -> int:
-        return(copysign(1, self.compute_score(self.LABEL_WHITE)- self.compute_score(self.LABEL_BLACK)) )
+        reward_1_to_minus1 = copysign(1, self.compute_score(self.LABEL_WHITE)- self.compute_score(self.LABEL_BLACK))
+        return( 0.5*(1+reward_1_to_minus1) )
 
     def compute_network_inputs(self)->torch.Tensor:
         return torch.tensor(self.colors,dtype = torch.float32)
 
     def draw(self,delay_s,scale = 100):
         
-        if delay_s == -1:
+        if delay_s == -1 or delay_s == 0:
             return
 
         def draw_hexagon(x,y, scale,fill_color,label):
