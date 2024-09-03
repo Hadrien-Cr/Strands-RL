@@ -75,12 +75,8 @@ class StrandsBoard:
     def check_for_termination(self) -> bool:
         if self.round_idx == 0:
             return False
-        d_a =self.get_digits_availables()
-        
-        if np.sum(d_a)==1:
-            for label in range(1,7):
-                if d_a[label] and np.sum(self.labels_bitmaps[label])<=label:
-                    return True
+        if np.sum(self.get_digits_availables())==0:
+            return True
         
 
     def update_hex(self,hex,new_label):
@@ -169,15 +165,15 @@ class StrandsBoard:
         return max_area
                 
     def compute_reward(self) -> int:
-        reward_1_to_minus1 = copysign(1, self.compute_score(self.LABEL_WHITE)- self.compute_score(self.LABEL_BLACK))
-        return( 0.5*(1+reward_1_to_minus1) )
+        reward= copysign(1, self.compute_score(self.LABEL_WHITE) - self.compute_score(self.LABEL_BLACK))
+        return(reward)
 
     def compute_network_inputs(self)->torch.Tensor:
         return torch.tensor(self.colors,dtype = torch.float32)
 
-    def draw(self,delay_s,scale = 100):
+    def draw(self,display_s = 0,scale = 100):
         
-        if delay_s == -1 or delay_s == 0:
+        if display_s == -1 or display_s == 0:
             return
 
         def draw_hexagon(x,y, scale,fill_color,label):
@@ -210,8 +206,8 @@ class StrandsBoard:
 
 
         cv2.imshow('Display',img) 
-        cv2.waitKey(int(1000*delay_s))
-        time.sleep(delay_s)
+        cv2.waitKey(int(1000*display_s))
+        time.sleep(display_s)
 
 
 

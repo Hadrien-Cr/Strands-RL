@@ -2,43 +2,48 @@ from agent import *
 from env import *
 import torch.nn.functional as F
 
-def train(agents: list[Agent], optimizers, board: StrandsBoard, eps: float = 0.1):
+def reinforce(agents: list[Agent], optimizers, board: StrandsBoard, baseline: float = 0.0) -> int:
     """
     Apply the training logic on one game 
+    REINFORCE
     """
 
     board.reset()
-    prevQValues = [torch.tensor(0.), torch.tensor(0.)]
-    currentQValues = [torch.tensor(0.), torch.tensor(0.)]
+
+    saved_log_probs_WHITE = []
+    saved_log_probs_BLACK = []  
     
-    while True:
+    while not board.check_for_termination():
     
         i = board.round_idx % 2  # 0 for "WHITE to play", 1 for "BLACK to play"
 
-        optimizers[i].zero_grad()
-        prevQValues[i] = currentQValues[i].clone().detach()
-        currentQValues[i] = act(agents[i], board, eps=eps)
-        if board.check_for_termination():
-            break
-        loss = (currentQValues[i] - prevQValues[i]).pow(2).sqrt()
-        loss.backward()
-        optimizers[i].step()
+        log_prob = agents[i].act_reinforce(board)
 
-    # Perform the last action (only one legal move left)
-    i = board.round_idx % 2
-    prevQValues[i] = currentQValues[i].clone().detach()
-    currentQValues[i] = act(agents[i], board)
+        if i == 0:
+            saved_log_probs_WHITE.append(log_prob)
+        else:
+            saved_log_probs_BLACK.append(log_prob)
 
     # Handle final step
     reward = board.compute_reward()
 
-    for i in range(2):
-        if i == 0:
-            delta = currentQValues[i] - torch.tensor(reward)
-        else:
-            delta = currentQValues[i] - torch.tensor(-reward)
+    policy_loss_WHITE = []
+    for log_prob in saved_log_probs_WHITE:
+        policy_loss_WHITE.append(-log_prob * (reward - baseline))
+    policy_loss_WHITE = torch.cat(policy_loss_WHITE).mean() 
 
-        loss = delta.pow(2).sqrt()
-        loss.backward()
-        optimizers[i].step()
+    policy_loss_BLACK = []
+    for log_prob in saved_log_probs_BLACK:
+        policy_loss_BLACK.append(-log_prob * (-reward + baseline))
+    policy_loss_BLACK = torch.cat(policy_loss_BLACK).mean() 
 
+    optimizers[0].zero_grad()
+    optimizers[1].zero_grad()
+
+    policy_loss_BLACK.backward()
+    policy_loss_WHITE.backward()
+    optimizers[0].step()
+    optimizers[1].step()
+
+
+    return(reward)
