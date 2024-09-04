@@ -7,7 +7,7 @@ import time
 WHITE = (255,255,255)
 BLACK = (0,0,0)
 GRAY = (170,170,170)
-BACKGROUND = (170,170,70)
+BACKGROUND = (70,100,100)
 
 class StrandsBoard:
     def __init__(self, nRings = 6) -> None:
@@ -22,7 +22,7 @@ class StrandsBoard:
     
         self.digit_chosen = 2
         self.digits_left_to_place = 1
-        self.round_idx = 0
+        self.round_idx = 1
 
 
     def reset(self):
@@ -80,6 +80,8 @@ class StrandsBoard:
         
 
     def update_hex(self,hex,new_label):
+        assert hex>=0 and hex<self.nbHexes, "impossible to place a tile: hex is out of bounds"
+        assert new_label == self.LABEL_WHITE or new_label == self.LABEL_BLACK, "impossible to place a tile: label is not valid"
         assert not self.labels_bitmaps[0][hex], "impossible to place a tile: hex is out of bounds"
         assert self.digit_chosen>0, "impossible to place a tile: digit chosen is not valid"
         assert self.digits_left_to_place>0, "impossible to place a tile: no tiles left for this round"
@@ -142,6 +144,10 @@ class StrandsBoard:
 
         return neighbours
     
+    def make_first_random_action(self):
+        hexes = self.get_hexes_availables()
+        hex = np.random.choice(np.where(hexes)[0])
+        self.update_hex(hex, self.LABEL_BLACK)
 
     def compute_score(self, target_label) -> int:
         def bfs(hex, target_label)-> int:
@@ -171,8 +177,14 @@ class StrandsBoard:
     def compute_network_inputs(self)->torch.Tensor:
         return torch.tensor(self.colors,dtype = torch.float32)
 
-    def draw(self,display_s = 0,scale = 100):
-        
+    def draw(self, display_s = 0, scale = 100):
+        """
+        Draws the game board with the current state of the game.
+        Args:
+            display_s (int, optional): The time in seconds to display the board. Defaults to 0. If 0 or -1, the board is not displayed.
+            scale (int, optional): The scale of the board. Defaults to 100.
+        """
+
         if display_s == -1 or display_s == 0:
             return
 
@@ -183,14 +195,16 @@ class StrandsBoard:
             pts = np.array([(int(x +  0.55*scale * cos(radians(angle))),
                         int( y +   0.65*scale * sin(radians(angle)))) for angle in angles_deg])
             cv2.fillPoly(img, [pts], fill_color)
-            cv2.putText(img, text=f'{label}',org=(int(x-0.1*scale), int(y+0.1*scale)),fontScale=scale/60, color=BLACK,thickness=int(scale/20),fontFace=cv2.FONT_HERSHEY_SIMPLEX)
+            if fill_color == WHITE or fill_color == GRAY:
+                cv2.putText(img, text=f'{label}',org=(int(x-0.2*scale), int(y+0.2*scale)),fontScale=scale/60, color=BLACK,thickness=int(scale/20),fontFace=cv2.FONT_HERSHEY_SIMPLEX)
 
+            elif fill_color == BLACK:
+                cv2.putText(img, text=f'{label}',org=(int(x-0.2*scale), int(y+0.2*scale)),fontScale=scale/60, color=WHITE,thickness=int(scale/20),fontFace=cv2.FONT_HERSHEY_SIMPLEX)
 
-        img = GRAY[0]*np.ones([scale*self.board_size, scale*self.board_size],dtype=np.uint8)
+        img = np.full((scale * self.board_size, scale * self.board_size, 3), BACKGROUND, dtype=np.uint8)
         
         center=self.board_size//2+1
         for hex in range(self.board_size*self.board_size):
-            if not self.labels_bitmaps[0][hex]:
                 row,col = hex//self.board_size, hex%self.board_size
                 y,x = scale*(row+0.5), scale*(col+0.5*(row-center)+1)
                 

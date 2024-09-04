@@ -9,12 +9,13 @@ def reinforce(agents: list[Agent], optimizers, board: StrandsBoard, baseline: fl
     """
 
     board.reset()
-
+    board.make_first_random_action()
+    
     saved_log_probs_WHITE = []
     saved_log_probs_BLACK = []  
     
     while not board.check_for_termination():
-    
+        
         i = board.round_idx % 2  # 0 for "WHITE to play", 1 for "BLACK to play"
 
         log_prob = agents[i].act_reinforce(board)
@@ -30,19 +31,19 @@ def reinforce(agents: list[Agent], optimizers, board: StrandsBoard, baseline: fl
     policy_loss_WHITE = []
     for log_prob in saved_log_probs_WHITE:
         policy_loss_WHITE.append(-log_prob * (reward - baseline))
-    policy_loss_WHITE = torch.cat(policy_loss_WHITE).mean() 
+    policy_loss_WHITE = torch.cat(policy_loss_WHITE).sum()
 
     policy_loss_BLACK = []
     for log_prob in saved_log_probs_BLACK:
-        policy_loss_BLACK.append(-log_prob * (-reward + baseline))
-    policy_loss_BLACK = torch.cat(policy_loss_BLACK).mean() 
+        policy_loss_BLACK.append(-log_prob * (-reward - baseline))
+    policy_loss_BLACK = torch.cat(policy_loss_BLACK).sum()
 
     optimizers[0].zero_grad()
-    optimizers[1].zero_grad()
-
-    policy_loss_BLACK.backward()
     policy_loss_WHITE.backward()
     optimizers[0].step()
+
+    optimizers[1].zero_grad()
+    policy_loss_BLACK.backward()
     optimizers[1].step()
 
 
