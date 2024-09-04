@@ -127,8 +127,6 @@ class Agent_CNN(Agent):
             nn.ReLU(),
             nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
-            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
         )
 
         self.outDigits = nn.Linear(nbHexes*64, nbDigits)

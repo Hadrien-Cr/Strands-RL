@@ -80,13 +80,17 @@ if __name__ == "__main__":
     parser.add_argument("--display-rollout", action="store_true", help="Display rollout during evaluation if set.")
     parser.add_argument("--test-cuda", action="store_true", help="Test CUDA speed.")
     parser.add_argument("--test-cpu", action="store_true", help="Test CPU speed.")
-    parser.add_argument("--policy", type=str, default="mlp", help="Policy to use for the agents.")
+    parser.add_argument("--policy", type=str, default="mlp", help="Policy to use for the agents, default: 'mlp'.")
     args = parser.parse_args()
 
     if args.test_cuda:
-        test_speed("cuda")
+        test_speed("cuda", policy=args.policy)
     if args.test_cpu:
-        test_speed("cpu")
+        test_speed("cpu", policy=args.policy)
     
-    main(device=args.device, n_training_games=args.n_training_games, freq_eval=args.freq_eval, 
-         learning_rate=args.learning_rate, display_rollout=args.display_rollout)
+    main(device=args.device, 
+         n_training_games=args.n_training_games, 
+         freq_eval=args.freq_eval, 
+         learning_rate=args.learning_rate, 
+         display_rollout=args.display_rollout, 
+         policy=args.policy)

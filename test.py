@@ -27,7 +27,7 @@ def test_speed(device: str = "cpu", policy: str = "mlp") -> None:
     total_time = time.time() - start_time
     average_time_per_game = total_time / num_training_games
     
-    print(f"Average time per training game: {average_time_per_game:.6f} seconds with {device} device")
+    print(f"Average time per training game: {average_time_per_game:.6f} seconds with {device} device and {policy} policy")
 
     # Measure time for rollout games
     num_rollout_games = 10
@@ -40,4 +40,4 @@ def test_speed(device: str = "cpu", policy: str = "mlp") -> None:
     total_time = time.time() - start_time
     average_time_per_game = total_time / num_rollout_games
     
-    print(f"Average time per rollout game: {average_time_per_game:.6f} seconds with {device} device")
+    print(f"Average time per rollout game: {average_time_per_game:.6f} seconds with {device} device and {policy} policy")
