@@ -53,7 +53,7 @@ class Agent(nn.Module):
         """
         Acts and returns the (differentiable) log probability of the picked action
         """
-        sum_log_prob, n_items = torch.tensor([0.]), 0
+        log_prob_digit,log_prob_hex, n_items = torch.tensor([0.]),torch.tensor([0.]), 0
 
         # choosing a digit
         if board.digits_left_to_place==0:
@@ -68,8 +68,7 @@ class Agent(nn.Module):
 
             board.update_digit_chosen(A.item())
 
-            sum_log_prob += m.log_prob(A)
-            n_items += 1
+            log_prob_digit = m.log_prob(A)
 
         # placing tiles on hexes
         while board.digits_left_to_place>0:
@@ -84,10 +83,10 @@ class Agent(nn.Module):
 
             board.update_hex(A.item(), self.LABEL)
 
-            sum_log_prob += m.log_prob(A)
+            log_prob_hex += m.log_prob(A)
             n_items += 1
 
-        return (sum_log_prob)
+        return(log_prob_digit+log_prob_hex/n_items)
 
 
     def act_greedily(self, board: StrandsBoard) :

@@ -7,7 +7,7 @@ import time
 WHITE = (255,255,255)
 BLACK = (0,0,0)
 GRAY = (170,170,170)
-
+BACKGROUND = (170,170,70)
 
 class StrandsBoard:
     def __init__(self, nRings = 6) -> None:
@@ -177,21 +177,13 @@ class StrandsBoard:
             return
 
         def draw_hexagon(x,y, scale,fill_color,label):
+
             """Draws a hexagon with optional number in its center."""
             angles_deg = [60 * i + 30 for i in range(6)]
             pts = np.array([(int(x +  0.55*scale * cos(radians(angle))),
                         int( y +   0.65*scale * sin(radians(angle)))) for angle in angles_deg])
-            if fill_color == 'WHITE':
-                fill_color = WHITE
-                number_color = BLACK
-            elif fill_color == 'BLACK':
-                fill_color = BLACK
-                number_color = WHITE
-            elif fill_color == 'GRAY':
-                fill_color = GRAY
-                number_color = BLACK
             cv2.fillPoly(img, [pts], fill_color)
-            cv2.putText(img, text=f'{label}',org=(int(x-0.1*scale), int(y+0.1*scale)),fontScale=scale/60, color=number_color,thickness=int(scale/20),fontFace=cv2.FONT_HERSHEY_SIMPLEX)
+            cv2.putText(img, text=f'{label}',org=(int(x-0.1*scale), int(y+0.1*scale)),fontScale=scale/60, color=BLACK,thickness=int(scale/20),fontFace=cv2.FONT_HERSHEY_SIMPLEX)
 
 
         img = GRAY[0]*np.ones([scale*self.board_size, scale*self.board_size],dtype=np.uint8)
@@ -201,7 +193,16 @@ class StrandsBoard:
             if not self.labels_bitmaps[0][hex]:
                 row,col = hex//self.board_size, hex%self.board_size
                 y,x = scale*(row+0.5), scale*(col+0.5*(row-center)+1)
-                fill_color = ('BLACK' if self.labels_bitmaps[self.LABEL_BLACK][hex]  else ('WHITE' if self.labels_bitmaps[self.LABEL_WHITE][hex] else 'GRAY'))
+                
+                if self.labels_bitmaps[self.LABEL_WHITE][hex]:
+                    fill_color = WHITE
+                elif self.labels_bitmaps[self.LABEL_BLACK][hex]:
+                    fill_color = BLACK
+                elif  self.labels_bitmaps[0][hex]:
+                    fill_color = BACKGROUND
+                else:
+                    fill_color = GRAY
+
                 draw_hexagon(x,y, scale,fill_color = fill_color,label = self.mapping_hex_to_default_label[hex] )
 
 
