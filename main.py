@@ -11,18 +11,21 @@ def main(device: str = "cpu",
          n_training_games: int = 10_000, 
          freq_eval: int = 100, 
          learning_rate: float = 0.001, 
-         display_rollout: bool = False):
+         display_rollout: bool = False,
+         policy: str = "mlp") -> None:
     """
-    Train and evaluate agents using reinforcement learning.
+    The main function that trains two agents using reinforcement learning and evaluates their performance.
     
     Parameters:
-    device (str): The device to use for training, either 'cpu' or 'cuda'.
-    n_training_games (int): The number of training games to play.
-    freq_eval (int): The frequency of evaluations during training.
-    learning_rate (float): The learning rate for the optimizer.
-    display_rollout (bool): Whether to display rollout during evaluation.
+    device (str): The device to use for training (default: "cpu").
+    n_training_games (int): The number of training games to play (default: 10_000).
+    freq_eval (int): The frequency at which to evaluate the agents' performance (default: 100).
+    learning_rate (float): The learning rate for the Adam optimizer (default: 0.001).
+    display_rollout (bool): Whether to display the rollout of the agents' moves (default: False).
+    policy (str): The policy to use for the agents (default: "mlp").
+    
     """
-
+    
     def format_time(time_elapsed) -> str:
         hours = int(time_elapsed // 3600)
         minutes = int((time_elapsed % 3600) // 60)
@@ -33,7 +36,8 @@ def main(device: str = "cpu",
     baseline = 0
     rewards = []
 
-    agents = init_agents(board, device)
+    agents = init_agents(board, device, policy)
+        
     optimizers = [torch.optim.Adam(agents[i].parameters(), lr=learning_rate) for i in range(2)]
 
     st = time.time()
@@ -76,7 +80,7 @@ if __name__ == "__main__":
     parser.add_argument("--display-rollout", action="store_true", help="Display rollout during evaluation if set.")
     parser.add_argument("--test-cuda", action="store_true", help="Test CUDA speed.")
     parser.add_argument("--test-cpu", action="store_true", help="Test CPU speed.")
-
+    parser.add_argument("--policy", type=str, default="mlp", help="Policy to use for the agents.")
     args = parser.parse_args()
 
     if args.test_cuda:

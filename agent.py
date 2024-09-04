@@ -93,8 +93,14 @@ class Agent_MLP(Agent):
     def __init__(self, nbHexes: int, nbDigits: int, LABEL_COLOR: int, device: str = "cpu") -> None:
         super().__init__(nbHexes, nbDigits, LABEL_COLOR, device)
 
-        self.fc1 = nn.Linear(nbHexes, 128)
-        self.fc2 = nn.Linear(128, 128)
+        self.mlp = nn.Sequential(
+            nn.Linear(nbHexes, 128),
+            nn.ReLU(),
+            nn.Linear(128, 128),
+            nn.ReLU(),
+            nn.Linear(128, 128),
+            nn.ReLU(),
+        )
 
         self.outDigits = nn.Linear(128, nbDigits)
         self.outHexes = nn.Linear(128, nbHexes)
@@ -103,15 +109,42 @@ class Agent_MLP(Agent):
 
     def get_activations_digits(self, x: torch.Tensor) -> torch.Tensor:
         x = x.unsqueeze(0).to(self.device)
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
+        x = self.mlp(x)
         x = F.relu(self.outDigits(x))
         return x.cpu()
 
     def get_activations_hexes(self, x: torch.Tensor) -> torch.Tensor:
         x = x.unsqueeze(0).to(self.device)
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
+        x = self.mlp(x)
+        x = F.relu(self.outHexes(x))
+        return x.cpu()
+
+class Agent_CNN(Agent):
+    def __init__(self, nbHexes: int, nbDigits: int, LABEL_COLOR: int, device: str = "cpu") -> None:
+        super().__init__(nbHexes, nbDigits, LABEL_COLOR, device)
+        self.cnn = nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+        )
+
+        self.outDigits = nn.Linear(nbHexes*64, nbDigits)
+        self.outHexes = nn.Linear(nbHexes*64, nbHexes)
+
+        self.to(device)
+    
+    def get_activations_digits(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.unsqueeze(0).unsqueeze(0).to(self.device)
+        x = self.cnn(x).flatten(0)
+        x = F.relu(self.outDigits(x))
+        return x.cpu()
+
+    def get_activations_hexes(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.unsqueeze(0).unsqueeze(0).to(self.device)
+        x = self.cnn(x).flatten(0)
         x = F.relu(self.outHexes(x))
         return x.cpu()
 
@@ -127,16 +160,15 @@ class Agent_Random(Agent):
         return torch.randn(self.nbHexes)
 
 
-def init_agents(board: StrandsBoard, device: str = "cpu") -> list[Agent]:
-    agents = [
-        Agent_MLP(nbDigits=board.LABEL_BLACK + 1, nbHexes=board.nbHexes, LABEL_COLOR=board.LABEL_WHITE, device=device),
-        Agent_MLP(nbDigits=board.LABEL_BLACK + 1, nbHexes=board.nbHexes, LABEL_COLOR=board.LABEL_BLACK, device=device)
-    ]
-    return agents
 
-def init_random_agents(board: StrandsBoard, device: str = "cpu") -> list[Agent]:
-    agents = [
-        Agent_Random(nbDigits=board.LABEL_BLACK + 1, nbHexes=board.nbHexes, LABEL_COLOR=board.LABEL_WHITE, device=device),
-        Agent_Random(nbDigits=board.LABEL_BLACK + 1, nbHexes=board.nbHexes, LABEL_COLOR=board.LABEL_BLACK, device=device)
-    ]
-    return agents
+def init_agents(board: StrandsBoard, device: str = "cpu", policy: str = "random") -> list[Agent]:
+    if policy == "mlp":
+        return [Agent_MLP(board.nbHexes, board.LABEL_BLACK+1, board.LABEL_WHITE, device), 
+                Agent_MLP(board.nbHexes, board.LABEL_BLACK+1, board.LABEL_BLACK, device)]
+    elif policy == "cnn":
+        return [Agent_CNN(board.nbHexes, board.LABEL_BLACK+1, board.LABEL_WHITE, device), 
+                Agent_CNN(board.nbHexes, board.LABEL_BLACK+1, board.LABEL_BLACK, device)]    
+    else:
+        return [Agent_Random(board.nbHexes, board.LABEL_BLACK+1, board.LABEL_WHITE, device), 
+                Agent_Random(board.nbHexes, board.LABEL_BLACK+1, board.LABEL_BLACK, device)]
+

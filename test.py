@@ -5,7 +5,7 @@ from agent import *
 from training import *
 from eval import *
 
-def test_speed(device: str = "cpu"):
+def test_speed(device: str = "cpu", policy: str = "mlp") -> None:
     """
     Test the speed of training and rollout on the specified device.
     
@@ -13,7 +13,7 @@ def test_speed(device: str = "cpu"):
     device (str): The device to use for testing, either 'cpu' or 'cuda'.
     """
     board = StrandsBoard()
-    agents = init_agents(board, device)
+    agents = init_agents(board, device, policy)
     optimizers = [torch.optim.Adam(agents[i].parameters()) for i in range(2)]
     
     # Measure time for training games

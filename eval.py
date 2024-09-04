@@ -32,7 +32,7 @@ def evaluate_vs_self(agents: list[Agent], board: StrandsBoard, n_rollouts: int) 
 
 def evaluate_vs_random(agents: list[Agent], board: StrandsBoard, n_rollouts: int, device: str = "cpu") -> float:
     
-    agents_random = init_random_agents(board)
+    agents_random = init_agents(board, policy="random")
     
     rewards_agent_WHITE = []
     rewards_agent_BLACK = []
