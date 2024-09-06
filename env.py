@@ -149,29 +149,71 @@ class StrandsBoard:
         hex = np.random.choice(np.where(hexes)[0])
         self.update_hex(hex, self.LABEL_BLACK)
 
-    def compute_score(self, target_label) -> int:
+    def compute_areas(self, target_label) -> int:
         def bfs(hex, target_label)-> int:
             if visited[hex]:
                 return 0
             else:
                 visited[hex] = True
-                sum = int(self.labels_bitmaps[target_label][hex])
-
-                for neighbour in self.neighbours(hex):
-                    sum += bfs(neighbour, target_label)
-                return sum
+                if self.labels_bitmaps[target_label][hex]:
+                    sum = 1
+                    for neighbour in self.neighbours(hex):
+                        sum += bfs(neighbour, target_label)
+                    return sum
+                return 0
         
         visited = [self.labels_bitmaps[0][hex] for hex in range(self.nbHexes) ]
 
-        max_area = 0
+        areas = []
         for hex in range(self.nbHexes):
             if not visited[hex]:
-                max_area = max(max_area ,bfs(hex, target_label))
+                area = bfs(hex, target_label)
+                areas.append(area)
 
-        return max_area
-                
+        return areas.sort(reverse=True)
+    
+    def compute_heuristic_areas(self, target_label) -> int:
+        opponent_label = (self.LABEL_BLACK if target_label==self.LABEL_WHITE else self.LABEL_WHITE)        
+        def heuristic_bfs(hex, target_label)-> int:
+            if visited[hex]:
+                return 0
+            else:
+                visited[hex] = True
+                if self.labels_bitmaps[target_label][hex]:
+                    sum = 1
+                    for neighbour in self.neighbours(hex):
+                        sum += heuristic_bfs(neighbour, target_label)
+                    return sum
+                else:
+                    opponent_label = 1 if target_label == 2 else 2
+                return 0.5*int(not self.labels_bitmaps[opponent_label][hex])
+        
+        visited = [self.labels_bitmaps[0][hex] for hex in range(self.nbHexes) ]
+
+        areas = []
+        for hex in range(self.nbHexes):
+            if not visited[hex]:
+                area = heuristic_bfs(hex, target_label)
+                areas.append(area)
+
+        return areas.sort(reverse=True)
+                      
     def compute_reward(self) -> int:
-        reward= copysign(1, self.compute_score(self.LABEL_WHITE) - self.compute_score(self.LABEL_BLACK))
+        areas_white = self.compute_areas(self.LABEL_WHITE)
+        areas_black = self.compute_areas(self.LABEL_BLACK)
+        for i in range (min(len(areas_white),len(areas_black))):
+            if areas_white[i] > areas_black[i]:
+                return 1
+            elif areas_white[i] < areas_black[i]:
+                return -1
+        if len(areas_white) > len(areas_black):
+            return -1
+        elif len(areas_white) < len(areas_black):
+            return 1
+        return 0
+    
+    def compute_heuristic_reward(self) -> int:
+        reward = self.compute_heuristic_areas(self.LABEL_WHITE) - self.compute_heuristic_areas(self.LABEL_BLACK)
         return(reward)
 
     def compute_network_inputs(self)->torch.Tensor:
