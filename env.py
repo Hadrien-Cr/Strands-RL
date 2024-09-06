@@ -169,8 +169,8 @@ class StrandsBoard:
             if not visited[hex]:
                 area = bfs(hex, target_label)
                 areas.append(area)
-
-        return areas.sort(reverse=True)
+        areas.sort(reverse=True)
+        return areas
     
     def compute_heuristic_areas(self, target_label) -> int:
         opponent_label = (self.LABEL_BLACK if target_label==self.LABEL_WHITE else self.LABEL_WHITE)        
