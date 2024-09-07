@@ -94,6 +94,7 @@ class Agent_MLP(Agent):
         super().__init__(nbHexes, nbDigits, LABEL_COLOR, device)
 
         self.mlp = nn.Sequential(
+            nn.Flatten(),
             nn.Linear(nbHexes, 128),
             nn.ReLU(),
             nn.Linear(128, 128),
@@ -126,7 +127,7 @@ class Agent_CNN(Agent):
             nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
             nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
-            nn.ReLU(),
+            nn.ReLU()
         )
 
         self.outDigits = nn.Linear(nbHexes*64, nbDigits)
@@ -135,13 +136,13 @@ class Agent_CNN(Agent):
         self.to(device)
     
     def get_activations_digits(self, x: torch.Tensor) -> torch.Tensor:
-        x = x.unsqueeze(0).unsqueeze(0).to(self.device)
+        x = x.unsqueeze(0).to(self.device)
         x = self.cnn(x).flatten(0)
         x = F.relu(self.outDigits(x))
         return x.cpu()
 
     def get_activations_hexes(self, x: torch.Tensor) -> torch.Tensor:
-        x = x.unsqueeze(0).unsqueeze(0).to(self.device)
+        x = x.unsqueeze(0).to(self.device)
         x = self.cnn(x).flatten(0)
         x = F.relu(self.outHexes(x))
         return x.cpu()

@@ -217,7 +217,9 @@ class StrandsBoard:
         return(reward)
 
     def compute_network_inputs(self)->torch.Tensor:
-        return torch.tensor(self.colors,dtype = torch.float32)
+        x_flatten = torch.tensor(self.colors,dtype = torch.float32)
+        x_square = x_flatten.view(-1, self.board_size)
+        return x_square
 
     def draw(self, display_s = 0, scale = 100):
         """
