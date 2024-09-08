@@ -2,7 +2,7 @@ from agent import *
 from env import *
 import torch.nn.functional as F
 
-def reinforce(agents: list[Agent], optimizers, board: StrandsBoard, baseline: float = 0.0) -> int:
+def reinforce(agents: list[Agent_NN], optimizers, board: StrandsBoard, baseline: float = 0.0) -> int:
     """
     Apply the training logic on one game 
     REINFORCE

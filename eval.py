@@ -19,10 +19,10 @@ def rollout(agents: list[Agent], board: StrandsBoard,display_s:float = -1) -> in
 
     return(reward)
 
-def evaluate_vs_self(agents: list[Agent], board: StrandsBoard, n_rollouts: int) -> float:
+def evaluate(agents: list[Agent], board: StrandsBoard, n_rollouts: int) -> float:
 
     rewards_agent_WHITE = []
-
+    
     for i in range(n_rollouts):
         
         reward_agent_WHITE = rollout(agents, board)
@@ -30,21 +30,4 @@ def evaluate_vs_self(agents: list[Agent], board: StrandsBoard, n_rollouts: int) 
 
     return(np.mean(rewards_agent_WHITE), -np.mean(rewards_agent_WHITE))
 
-def evaluate_vs_random(agents: list[Agent], board: StrandsBoard, n_rollouts: int, device: str = "cpu") -> float:
-    
-    agents_random = init_agents(board, policy="random")
-    
-    rewards_agent_WHITE = []
-    rewards_agent_BLACK = []
-
-    for i in range(n_rollouts):
-        
-        reward_agent_WHITE = rollout([agents[0], agents_random[1]], board)
-        reward_agent_BLACK = rollout([agents_random[0],agents[1]], board)
-
-        rewards_agent_WHITE.append(reward_agent_WHITE)
-        rewards_agent_BLACK.append(reward_agent_BLACK)
-
-
-    return(np.mean(rewards_agent_WHITE),np.mean(rewards_agent_BLACK))
         

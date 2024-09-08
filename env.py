@@ -3,7 +3,7 @@ from math import copysign,cos,sin,radians
 import cv2
 import torch
 import time
-
+from copy import deepcopy
 WHITE = (255,255,255)
 BLACK = (0,0,0)
 GRAY = (170,170,170)
@@ -11,11 +11,13 @@ BACKGROUND = (70,100,100)
 
 class StrandsBoard:
     def __init__(self, nRings = 6) -> None:
+        assert 4<=nRings<= 7, f"nRings must be between 4 and 7, not {nRings}"
         self.nRings = nRings
         self.board_size = (2*self.nRings-1)
         self.nbHexes = self.board_size * self.board_size
         self.LABEL_WHITE = 7
         self.LABEL_BLACK = 8
+        self.nbDigits = self.LABEL_BLACK + 1
 
         self.labels_bitmaps,self.mapping_hex_to_default_label = self.init_labels_bitmaps()
         self.colors =  np.zeros(self.nbHexes)
@@ -80,10 +82,10 @@ class StrandsBoard:
         
 
     def update_hex(self,hex,new_label):
-        assert hex>=0 and hex<self.nbHexes, "impossible to place a tile: hex is out of bounds"
-        assert new_label == self.LABEL_WHITE or new_label == self.LABEL_BLACK, "impossible to place a tile: label is not valid"
-        assert not self.labels_bitmaps[0][hex], "impossible to place a tile: hex is out of bounds"
-        assert self.digit_chosen>0, "impossible to place a tile: digit chosen is not valid"
+        assert hex>=0 and hex<self.nbHexes, f"impossible to place a tile: hex {hex} is out of bounds"
+        assert new_label == self.LABEL_WHITE or new_label == self.LABEL_BLACK, f"impossible to place a tile: label {new_label} is not valid"
+        assert not self.labels_bitmaps[0][hex], "impossible to place a tile: hex is out of bounds of the board"
+        assert self.digit_chosen>0, f"impossible to place a tile: digit chosen {self.digit_chosen} is not valid"
         assert self.digits_left_to_place>0, "impossible to place a tile: no tiles left for this round"
         assert not self.labels_bitmaps[new_label][hex], "impossible to place a tile: tile already occupied"
         assert self.labels_bitmaps[self.digit_chosen][hex], "impossible to place a tile: the hex doesnt belong to the digit chosen"
@@ -102,16 +104,18 @@ class StrandsBoard:
 
 
     def update_digit_chosen(self,new_digit):
+        assert 1<= new_digit <= 6, f"impossible to call this function: the digit {new_digit} is not a valid value."
+
         self.digit_chosen = new_digit
 
         count = 0
         for hex in range(self.nbHexes):
             if self.labels_bitmaps[self.digit_chosen][hex]:
                 count+=1
+
+        assert min(self.digit_chosen,count), f"impossible to call this function: the digit {self.digit_chosen} is not available because it has only {count} valid free hexes"
         
         self.digits_left_to_place = min(self.digit_chosen,count)
-
-        assert self.digits_left_to_place>0, "impossible to call this function: the digit is not available because it has no valid free hexes"
 
 
     def get_hexes_availables(self) -> list[bool]:
@@ -195,8 +199,8 @@ class StrandsBoard:
             if not visited[hex]:
                 area = heuristic_bfs(hex, target_label)
                 areas.append(area)
-
-        return areas.sort(reverse=True)
+        areas.sort(reverse=True)
+        return areas
                       
     def compute_reward(self) -> int:
         areas_white = self.compute_areas(self.LABEL_WHITE)
@@ -212,15 +216,35 @@ class StrandsBoard:
             return 1
         return 0
     
-    def compute_heuristic_reward(self) -> int:
-        reward = self.compute_heuristic_areas(self.LABEL_WHITE) - self.compute_heuristic_areas(self.LABEL_BLACK)
-        return(reward)
+    def compute_heuristic_reward(self, label) -> int:
+        if label == self.LABEL_WHITE:
+            return self.compute_heuristic_areas(label)[0]
+        else:
+            return -self.compute_heuristic_areas(label)[0]
 
-    def compute_network_inputs(self)->torch.Tensor:
-        x_flatten = torch.tensor(self.colors,dtype = torch.float32)
-        x_square = x_flatten.view(-1, self.board_size)
-        return x_square
 
+    def compute_board_state(self):
+        if self.digits_left_to_place == 0:
+            mask = self.get_digits_availables()
+        else:
+            mask = self.get_hexes_availables()
+
+        state = {"colors": self.colors,
+                 "round_idx": self.round_idx,
+                 "digit_chosen": self.digit_chosen,
+                 "digits_left_to_place": self.digits_left_to_place,
+                 "labels_bitmaps": self.labels_bitmaps,
+                 "mask": mask}  
+        
+        return(state)
+    
+    def restore_board_state(self,state):
+        self.colors =  deepcopy(state["colors"])
+        self.round_idx = state["round_idx"]
+        self.digit_chosen = state["digit_chosen"]
+        self.digits_left_to_place = state["digits_left_to_place"]
+        self.labels_bitmaps =  deepcopy(state["labels_bitmaps"])
+        
     def draw(self, display_s = 0, scale = 100):
         """
         Draws the game board with the current state of the game.
@@ -267,6 +291,3 @@ class StrandsBoard:
         cv2.imshow('Display',img) 
         cv2.waitKey(int(1000*display_s))
         time.sleep(display_s)
-
-
-
