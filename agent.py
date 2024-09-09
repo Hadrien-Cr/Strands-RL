@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from env import *
+from math import log
 import itertools
 
 
@@ -40,7 +41,7 @@ class Agent_NN(Agent, nn.Module):
 
         # choosing a digit
         if board.digits_left_to_place == 0:
-            state = board.compute_board_state()
+            state = board.get_board_state()
             activations = self.get_activations_digits(state)
             mask = state['mask']
 
@@ -54,7 +55,7 @@ class Agent_NN(Agent, nn.Module):
 
         # placing tiles on hexes
         while board.digits_left_to_place > 0:
-            state = board.compute_board_state()
+            state = board.get_board_state()
             activations = self.get_activations_hexes(state)
             mask = state['mask']
 
@@ -76,7 +77,7 @@ class Agent_NN(Agent, nn.Module):
         """
         # choosing a digit
         if board.digits_left_to_place == 0:
-            state = board.compute_board_state()
+            state = board.get_board_state()
             activations = self.get_activations_digits(state)
 
             mask = state['mask']
@@ -89,7 +90,7 @@ class Agent_NN(Agent, nn.Module):
 
         # placing tiles on hexes
         while board.digits_left_to_place > 0:
-            state = board.compute_board_state()
+            state = board.get_board_state()
             activations = self.get_activations_hexes(state)
 
             mask = state['mask']
@@ -114,22 +115,28 @@ class Agent_MLP(Agent_NN):
             nn.Linear(128, 128),
             nn.ReLU(),
         )
-
-        self.outDigits = nn.Linear(128, self.nbDigits)
-        self.outHexes = nn.Linear(128, self.nbHexes)
+        self.outValue = [nn.Linear(128, 1) for _ in range(self.nbDigits)]
+        self.outDigits = [nn.Linear(128, self.nbDigits) for _ in range(self.nbDigits)]
+        self.outHexes = [nn.Linear(128, self.nbHexes) for _ in range(self.nbDigits)]
 
         self.to(device)
+
+    def get_activations_value(self, state) -> torch.Tensor:
+        x = torch.tensor(state["colors"], dtype=torch.float).view(self.board_size, self.board_size).unsqueeze(0).to(self.device)
+        x = self.mlp(x)
+        x = F.relu(self.outValue[state["digit_chosen"]](x))
+        return x.cpu()
 
     def get_activations_digits(self, state) -> torch.Tensor:
         x = torch.tensor(state["colors"], dtype=torch.float).view(self.board_size, self.board_size).unsqueeze(0).to(self.device)
         x = self.mlp(x)
-        x = F.relu(self.outDigits(x))
+        x = F.relu(self.outDigits[state["digit_chosen"]](x))
         return x.cpu()
 
     def get_activations_hexes(self, state) -> torch.Tensor:
         x = torch.tensor(state["colors"], dtype=torch.float).view(self.board_size, self.board_size).unsqueeze(0).to(self.device)
         x = self.mlp(x)
-        x = F.relu(self.outHexes(x))
+        x = F.relu(self.outHexes[state["digit_chosen"]](x))
         return x.cpu()
 
 
@@ -142,22 +149,29 @@ class Agent_CNN(Agent_NN):
             nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
             nn.ReLU()
         )
-
-        self.outDigits = nn.Linear(self.nbHexes * 64, self.nbDigits)
-        self.outHexes = nn.Linear(self.nbHexes * 64, self.nbHexes)
+        conv_out_shape = 64
+        self.outvalue = [nn.Linear(conv_out_shape*self.nbHexes, 1) for _ in range(self.nbDigits)]
+        self.outDigits = [nn.Linear(conv_out_shape*self.nbHexes, self.nbDigits) for _ in range(self.nbDigits)]
+        self.outHexes = [nn.Linear(conv_out_shape*self.nbHexes, self.nbHexes) for _ in range(self.nbDigits)]
 
         self.to(device)
     
     def get_activations_digits(self, state) -> torch.Tensor:
         x = torch.tensor(state["colors"], dtype=torch.float).view(self.board_size, self.board_size).unsqueeze(0).to(self.device)
         x = self.cnn(x).flatten(0)
-        x = F.relu(self.outDigits(x))
+        x = F.relu(self.outValue[state["digit_chosen"]](x))
+        return x.cpu()
+    
+    def get_activations_digits(self, state) -> torch.Tensor:
+        x = torch.tensor(state["colors"], dtype=torch.float).view(self.board_size, self.board_size).unsqueeze(0).to(self.device)
+        x = self.cnn(x).flatten(0)
+        x = F.relu(self.outDigits[state["digit_chosen"]](x))
         return x.cpu()
 
     def get_activations_hexes(self, state) -> torch.Tensor:
         x = torch.tensor(state["colors"], dtype=torch.float).view(self.board_size, self.board_size).unsqueeze(0).to(self.device)
         x = self.cnn(x).flatten(0)
-        x = F.relu(self.outHexes(x))
+        x = F.relu(self.outHexes[state["digit_chosen"]](x))
         return x.cpu()
 
 
@@ -168,64 +182,71 @@ class Agent_Random(Agent):
     def act_greedily(self, board: StrandsBoard):
         # Random action for digits
         if board.digits_left_to_place == 0:
-            state = board.compute_board_state()
+            state = board.get_board_state()
             mask = state['mask']
             A  = np.random.choice(np.where(mask)[0])
             board.update_digit_chosen(A)
 
         # Random action for hexes
         while board.digits_left_to_place > 0:
-            state = board.compute_board_state()
+            state = board.get_board_state()
             mask = state['mask']
             A  = np.random.choice(np.where(mask)[0])
             board.update_hex(A, self.LABEL)
 
 
+
 class Agent_1StepMinimax(Agent):
-    def __init__(self, board: StrandsBoard, LABEL_COLOR: int, budget: float = 0.1) -> None:
+    def __init__(self, board: StrandsBoard, LABEL_COLOR: int) -> None:
         super().__init__(board, LABEL_COLOR)
-        self.budget = budget
 
-    def exhaustive_1Stepsearch(self, board: StrandsBoard):
+    def exhaustive_1Step_hex_search(self, board: StrandsBoard):
+        assert(board.digits_left_to_place>0)
 
-        assert(board.digits_left_to_place ==0)
-        scores = [[(i,None,-1000)] for i in range(board.nbDigits)]
-        root_state = board.compute_board_state()
-        digits_av = root_state['mask']
+        state = board.get_board_state()
+        hexes_av = state["mask"]
+        hexes = np.where(hexes_av)[0]
 
-        start_time = time.time()
-        for digit in range(board.nbDigits):
+        scores = [-1000 for hex in range(self.nbHexes)]
+        
+        for hex in hexes:
+            board.update_hex(hex,self.LABEL)
+            score = board.compute_heuristic_reward()
             
-            if digits_av[digit]:
-                board.update_digit_chosen(digit)
-                intermediate_state = board.compute_board_state()
-                hexes_av = intermediate_state['mask']
-                hexes = np.where(hexes_av)[0]
-                combinations = itertools.combinations(hexes, board.digits_left_to_place)
-                for combination in combinations:
-                    if (self.budget < time.time() - start_time) :
-                        break
-                    board.restore_board_state(state=intermediate_state)
-                    for hex in combination:
-                        board.update_hex(hex, self.LABEL)
+            if self.LABEL == board.LABEL_WHITE:
+                scores[hex] = score
+            else:
+                scores[hex] = -score
+            
+            board.restore_board_state(state)
+        board.restore_board_state(state)
 
-                    score = (-1 if self.LABEL == board.LABEL_WHITE else 1) * board.compute_heuristic_reward(self.LABEL)
-                    scores[digit].append((digit,combination,score))
-                board.restore_board_state(state=root_state)
-
-        scores_grouped = [max(scores[digit], key = lambda x: x[2]) for digit in range(board.nbDigits)]
-        return max(scores_grouped, key = lambda x: x[2])
+        return max(enumerate(scores), key=lambda x: x[1])
 
     def act_greedily(self, board: StrandsBoard):
-        assert (board.digits_left_to_place == 0)
-        digit,combination,score = self.exhaustive_1Stepsearch(board)
-        board.update_digit_chosen(digit)
-        for hex in combination:
-            board.update_hex(hex, self.LABEL)
+        if (board.digits_left_to_place == 0):
+        
+            root_state = board.get_board_state()
+            digits_av =  root_state["mask"]
+
+            scores_by_digit = [-1000 for digit in range(self.nbDigits) ]
+            for digit in np.where(digits_av)[0]:
+                
+                board.update_digit_chosen(digit)
+                scores_by_digit[digit] = self.exhaustive_1Step_hex_search(board)[1]
+                board.restore_board_state(root_state)
+
+            digit_to_choose = max(enumerate(scores_by_digit), key=lambda x: x[1])[0]
+            
+            board.update_digit_chosen(digit_to_choose)
+
+        for _ in range(board.digits_left_to_place):
+            hex_to_choose = self.exhaustive_1Step_hex_search(board)[0]
+            board.update_hex(hex_to_choose, self.LABEL)
 
 
 class Agent_1StepMC(Agent):
-    def __init__(self, board: StrandsBoard, LABEL_COLOR: int, budget: float = 0.1) -> None:
+    def __init__(self, board: StrandsBoard, LABEL_COLOR: int, budget: float = 0.01) -> None:
         super().__init__(board, LABEL_COLOR)
         self.budget = budget
         self.default_policy_agents = [Agent_Random(board, LABEL_COLOR), Agent_Random(board, LABEL_COLOR)]
@@ -239,61 +260,55 @@ class Agent_1StepMC(Agent):
         reward = board.compute_reward()
         return(reward)
     
-    def exhaustive_1Stepsearch(self, board: StrandsBoard):
+    def exhaustive_1Step_hex_search(self, board: StrandsBoard):
+        assert(board.digits_left_to_place>0)
 
-        assert(board.digits_left_to_place ==0)
+        root_state = board.get_board_state()
+        hexes_av = root_state["mask"]
+        hexes = np.where(hexes_av)[0]
 
-        scores = [[(i,None,-1000,0)] for i in range(board.nbDigits)]
-        root_state = board.compute_board_state()
-        digits_av = root_state['mask']
-        
+        scores = [((0 if hex in hexes else -1_000),1) for hex in range(self.nbHexes)] # list of [(nwins, nvisits)]
         start_time = time.time()
-
-        # initialize scores
-        for digit in range(board.nbDigits):
-            if digits_av[digit]:
-                board.update_digit_chosen(digit)
-                intermediate_state = board.compute_board_state()
-                hexes_av = intermediate_state['mask']
-                hexes = np.where(hexes_av)[0]
-                combinations = itertools.combinations(hexes, board.digits_left_to_place)
-                for combination in combinations:
-                    if (self.budget < time.time() - start_time) :
-                        break    
-                    board.restore_board_state(state=intermediate_state)
-                    for hex in combination:
-                        board.update_hex(hex, self.LABEL)
-                    score = (-1 if self.LABEL == board.LABEL_WHITE else 1) * self.mc_rollout(board)
-                    scores[digit].append((digit,combination,score,1))
-
-                board.restore_board_state(state=root_state)
+        step = 1
         
+        ucb_sorting = lambda x: (x[1][0]/ x[1][1]  + 2*np.sqrt(np.log(step) / x[1][1]) if x[0] in hexes else -1_000) # UCB sorting
+
         while self.budget > (time.time() - start_time):
-            for digit in range(board.nbDigits):
-                if digits_av[digit]:
-                    board.update_digit_chosen(digit)
-                    intermediate_state = board.compute_board_state()
-                    for idx in range(len(scores[digit])):
-                        digit,combination,score,visits =scores[digit][idx]
-                        if (self.budget < (time.time() - start_time)):
-                            break
-                        
-                        elif (combination is not None):
-                            board.restore_board_state(state=intermediate_state)
-                            for hex in combination:
-                                board.update_hex(hex, self.LABEL)
-                            new_score = (-1 if self.LABEL == board.LABEL_WHITE else 1) * self.mc_rollout(board)
-                            scores[digit][idx]  = ((digit,combination,new_score+score,visits+1))
-                        board.restore_board_state(state=root_state)
-        scores_grouped = [max(scores[digit], key = lambda x: x[2]/max(x[3],1)) for digit in range(board.nbDigits)]
-        return max(scores_grouped, key = lambda x: x[2]/max(x[3],1))
+            hex_to_visit = max(enumerate(scores), key=ucb_sorting)[0]
+            board.update_hex(hex_to_visit,self.LABEL)
+            
+            if self.LABEL == board.LABEL_WHITE:
+                score = self.mc_rollout(board)
+            else:
+                score = -self.mc_rollout(board)
+            old_score,old_n_visits = scores[hex_to_visit]
+            scores[hex_to_visit] = old_score+score, old_n_visits+1
+
+            board.restore_board_state(root_state)
+            step+=1
+        idx,item = max(enumerate(scores), key=lambda x: x[1][0]/ x[1][1])
+        return idx,item[0]/item[1]
 
     def act_greedily(self, board: StrandsBoard):
-        assert (board.digits_left_to_place == 0)
-        digit,combination,score,visits = self.exhaustive_1Stepsearch(board)
-        board.update_digit_chosen(digit)
-        for hex in combination:
-            board.update_hex(hex, self.LABEL)
+        if (board.digits_left_to_place == 0):
+        
+            root_state = board.get_board_state()
+            digits_av =  root_state["mask"]
+
+            scores_by_digit = [-1000 for digit in range(self.nbDigits) ]
+            for digit in np.where(digits_av)[0]:
+                
+                board.update_digit_chosen(digit)
+                scores_by_digit[digit] = self.exhaustive_1Step_hex_search(board)[1]
+                board.restore_board_state(root_state)
+
+            digit_to_choose = max(enumerate(scores_by_digit), key=lambda x: x[1])[0]
+            
+            board.update_digit_chosen(digit_to_choose)
+
+        for _ in range(board.digits_left_to_place):
+            hex_to_choose = self.exhaustive_1Step_hex_search(board)[0]
+            board.update_hex(hex_to_choose, self.LABEL)
 
 def init_agents(board: StrandsBoard, device: str = "cpu", policy: str = "random", **kwargs) -> list[Agent]:
     if policy == "mlp":

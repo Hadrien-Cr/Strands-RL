@@ -17,7 +17,7 @@ class StrandsBoard:
         self.nbHexes = self.board_size * self.board_size
         self.LABEL_WHITE = 7
         self.LABEL_BLACK = 8
-        self.nbDigits = self.LABEL_BLACK + 1
+        self.nbDigits = 7
 
         self.labels_bitmaps,self.mapping_hex_to_default_label = self.init_labels_bitmaps()
         self.colors =  np.zeros(self.nbHexes)
@@ -75,7 +75,7 @@ class StrandsBoard:
         return (labels_bitmaps, mapping_hex_to_default_labels)
 
     def check_for_termination(self) -> bool:
-        if self.round_idx == 0:
+        if self.digits_left_to_place>0:
             return False
         if np.sum(self.get_digits_availables())==0:
             return True
@@ -101,6 +101,7 @@ class StrandsBoard:
         self.digits_left_to_place -= 1
         if self.digits_left_to_place == 0:
             self.round_idx +=1
+            self.digit_chosen = 0
 
 
     def update_digit_chosen(self,new_digit):
@@ -125,7 +126,7 @@ class StrandsBoard:
 
     def get_digits_availables(self)-> list[bool]:
         assert self.digits_left_to_place==0, "impossible to call this function: all tiles from previous digit should have been placed"
-        is_valid_digit = [False for i in range(len(self.labels_bitmaps))]
+        is_valid_digit = [False for i in range(0,7)]
 
         for label in range(1,7):
             for hex in range(self.nbHexes):
@@ -189,8 +190,7 @@ class StrandsBoard:
                         sum += heuristic_bfs(neighbour, target_label)
                     return sum
                 else:
-                    opponent_label = 1 if target_label == 2 else 2
-                return 0.5*int(not self.labels_bitmaps[opponent_label][hex])
+                    return 0.5*int(not self.labels_bitmaps[opponent_label][hex])
         
         visited = [self.labels_bitmaps[0][hex] for hex in range(self.nbHexes) ]
 
@@ -200,6 +200,7 @@ class StrandsBoard:
                 area = heuristic_bfs(hex, target_label)
                 areas.append(area)
         areas.sort(reverse=True)
+        
         return areas
                       
     def compute_reward(self) -> int:
@@ -216,25 +217,22 @@ class StrandsBoard:
             return 1
         return 0
     
-    def compute_heuristic_reward(self, label) -> int:
-        if label == self.LABEL_WHITE:
-            return self.compute_heuristic_areas(label)[0]
-        else:
-            return -self.compute_heuristic_areas(label)[0]
+    def compute_heuristic_reward(self,) -> int:
+        return self.compute_heuristic_areas(self.LABEL_WHITE)[0] - self.compute_heuristic_areas(self.LABEL_BLACK)[0]
+        
 
-
-    def compute_board_state(self):
+    def get_board_state(self):
         if self.digits_left_to_place == 0:
             mask = self.get_digits_availables()
         else:
             mask = self.get_hexes_availables()
 
-        state = {"colors": self.colors,
+        state = {"colors": deepcopy(self.colors),
                  "round_idx": self.round_idx,
                  "digit_chosen": self.digit_chosen,
                  "digits_left_to_place": self.digits_left_to_place,
-                 "labels_bitmaps": self.labels_bitmaps,
-                 "mask": mask}  
+                 "labels_bitmaps": deepcopy(self.labels_bitmaps),
+                 "mask": deepcopy(mask)}  
         
         return(state)
     
@@ -244,6 +242,7 @@ class StrandsBoard:
         self.digit_chosen = state["digit_chosen"]
         self.digits_left_to_place = state["digits_left_to_place"]
         self.labels_bitmaps =  deepcopy(state["labels_bitmaps"])
+        self.mask = deepcopy(state["mask"])
         
     def draw(self, display_s = 0, scale = 100):
         """

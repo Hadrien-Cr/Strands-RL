@@ -47,4 +47,4 @@ def reinforce(agents: list[Agent_NN], optimizers, board: StrandsBoard, baseline:
     optimizers[1].step()
 
 
-    return(reward)
+    return(reward, policy_loss_WHITE.item(), policy_loss_BLACK.item())

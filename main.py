@@ -1,19 +1,21 @@
 import argparse
 import time
+from tqdm import tqdm
 from env import *
 from agent import *
 from training import *
 from eval import *
 from test import *
 
-
-def main(nRings: int = 6,
+# TODO: add tensorboard logging to the main function: log the losses and the winrates
+def main(nRings: int = 4,
          device: str = "cpu", 
          n_training_games: int = 10_000, 
          freq_eval: int = 1000, 
          learning_rate: float = 0.001, 
          display_rollout: bool = False,
-         policy: str = "mlp") -> None:
+         policy: str = "mlp",
+         log_to_tensorboard: bool = False) -> None:
     """
     The main function that trains two agents using reinforcement learning and evaluates their performance.
     
@@ -33,10 +35,17 @@ def main(nRings: int = 6,
         seconds = int(time_elapsed % 60)
         return f"{hours}h {minutes}m {seconds}s"
 
+    # Initialize TensorBoard writer
+    if log_to_tensorboard:
+        from torch.utils.tensorboard import SummaryWriter  # Import TensorBoard SummaryWriter
+        writer = SummaryWriter()
+
     board = StrandsBoard(nRings = nRings )
     baseline = 0
     rewards = []
     size_eval = 20
+    losses_WHITE = []
+    losses_BLACK = []
 
     # Initialize agents with different policies
     agents_NN = init_agents(board, device, policy)
@@ -49,10 +58,17 @@ def main(nRings: int = 6,
     st = time.time()
     print("Training starts ...")
 
-    for game in range(1, n_training_games + 1):
+    for game in tqdm(range(1, n_training_games + 1)):
         baseline = (0 if len(rewards) < 5 else np.mean(rewards))
-        reward = reinforce(agents_NN, optimizers, board, baseline)
+        reward, loss_WHITE, loss_BLACK = reinforce(agents_NN, optimizers, board, baseline)
+        losses_BLACK.append(loss_BLACK)
+        losses_WHITE.append(loss_WHITE)
         rewards.append(reward)
+
+        # Log losses to TensorBoard
+        if log_to_tensorboard:
+            writer.add_scalar("Loss/White", loss_WHITE, game)
+            writer.add_scalar("Loss/Black", loss_BLACK, game)
 
         if game % freq_eval == 0:
             if display_rollout:
@@ -78,6 +94,7 @@ def main(nRings: int = 6,
             win_rate_WHITE_vs_random = 0.5 * (eval_WHITE_vs_random + 1)
             win_rate_BLACK_vs_random = 0.5 * (eval_BLACK_vs_random + 1)
 
+
             print('\n')
             print(64 * '-')
             print("\n")
@@ -85,7 +102,7 @@ def main(nRings: int = 6,
             
             # NN Agent vs NN Agent
             print(f"Average win rate of agent_WHITE_NN vs agent_BLACK_NN: {100 * win_rate_WHITE_vs_BLACK:.0f}% \n")
-            
+            print(f"Policy losses agent_WHITE_NN vs agent_BLACK_NN: {np.mean(losses_WHITE):.4f} vs {np.mean(losses_BLACK):.4f} \n")
             # NN Agent_WHITE
             print(f"Average win rate of agent_WHITE_NN vs agent_BLACK_Rd: {100 * win_rate_WHITE_vs_random:.0f}%")
             print(f"Average win rate of agent_WHITE_NN vs agent_BLACK_Mm: {100 * win_rate_WHITE_vs_minimax:.0f}% ")
@@ -95,6 +112,19 @@ def main(nRings: int = 6,
             print(f"Average win rate of agent_BLACK_NN vs agent_WHITE_Rd: {100 * win_rate_BLACK_vs_random:.0f}%")
             print(f"Average win rate of agent_BLACK_NN vs agent_WHITE_Mm: {100 * win_rate_BLACK_vs_minimax:.0f}%")
             print(f"Average win rate of agent_BLACK_NN vs agent_WHITE_MC: {100 * win_rate_BLACK_vs_mc:.0f}% \n")
+
+           # Logs to TensorBoard
+            if log_to_tensorboard:
+                writer.add_scalar("WinRate/White_vs_Black", win_rate_WHITE_vs_BLACK, game)
+                writer.add_scalar("WinRate/White_vs_Minimax", win_rate_WHITE_vs_minimax, game)
+                writer.add_scalar("WinRate/Black_vs_Minimax", win_rate_BLACK_vs_minimax, game)
+                writer.add_scalar("WinRate/White_vs_MC", win_rate_WHITE_vs_mc, game)
+                writer.add_scalar("WinRate/Black_vs_MC", win_rate_BLACK_vs_mc, game)
+                writer.add_scalar("WinRate/White_vs_Random", win_rate_WHITE_vs_random, game)
+                writer.add_scalar("WinRate/Black_vs_Random", win_rate_BLACK_vs_random, game)
+
+    if log_to_tensorboard:
+        writer.close()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train and evaluate agents with reinforcement learning.")
@@ -108,6 +138,7 @@ if __name__ == "__main__":
     parser.add_argument("--test-cuda", action="store_true", help="Test CUDA speed.")
     parser.add_argument("--test-cpu", action="store_true", help="Test CPU speed.")
     parser.add_argument("--policy", type=str, default="mlp", help="Policy to use for the agents, default: 'mlp'.")
+    parser.add_argument("--log-to-tb", action="store_true", help="Log to TensorBoard if set.")
     args = parser.parse_args()
 
     if args.test_cuda:
@@ -115,10 +146,11 @@ if __name__ == "__main__":
     if args.test_cpu:
         test_speed("cpu", policy=args.policy)
     
-    main( nRings=args.nrings,
+    main(nRings=args.nrings,
          device=args.device, 
          n_training_games=args.n_training_games, 
          freq_eval=args.freq_eval, 
          learning_rate=args.learning_rate, 
          display_rollout=args.display_rollout, 
-         policy=args.policy)
+         policy=args.policy,
+         log_to_tensorboard=args.log_to_tb)
